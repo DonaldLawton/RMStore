@@ -20,6 +20,10 @@
 
 #import <Foundation/Foundation.h>
 
+//dlawton-begin
+@class RMAppReceiptIAP;
+//dlawton-end
+
 /** Represents the app receipt.
  */
 __attribute__((availability(ios,introduced=7.0)))
@@ -73,6 +77,11 @@ __attribute__((availability(ios,introduced=7.0)))
  @return YES if there is an in-app purchase for the given product, NO otherwise.
  */
 - (BOOL)containsInAppPurchaseOfProductIdentifier:(NSString*)productIdentifier;
+
+
+//dlawton-begin
+- (RMAppReceiptIAP*) getMostRecentIAPReceiptWithProductIdentifier:(NSString*)productIdentifier;
+//dlawton-end
 
 /** Returns whether the receipt contains an active auto-renewable subscription for the given product identifier and for the given date.
  @param productIdentifier The identifier of the auto-renewable subscription.

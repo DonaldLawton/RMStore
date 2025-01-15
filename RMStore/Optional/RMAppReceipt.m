@@ -160,6 +160,42 @@ static NSURL *_appleRootCertificateURL = nil;
     return NO;
 }
 
+//dlawton-begin
+- (RMAppReceiptIAP*) getMostRecentIAPReceiptWithProductIdentifier:(NSString*)productIdentifier
+{
+    RMAppReceiptIAP* lastTransaction = nil;
+    
+    for (RMAppReceiptIAP* iap in _inAppPurchases)
+    {
+        if ([iap.productIdentifier isEqualToString:productIdentifier] == NO)
+            continue;
+        
+        //check expiration date if available
+        if (iap.subscriptionExpirationDate)
+        {
+            if (!lastTransaction || lastTransaction.subscriptionExpirationDate == nil || [iap.subscriptionExpirationDate compare:lastTransaction.subscriptionExpirationDate] == NSOrderedDescending)
+            {
+                lastTransaction = iap;
+            }
+        }
+        //otherwise base it on purchase date
+        else if (iap.purchaseDate)
+        {
+            if (!lastTransaction || lastTransaction.purchaseDate == nil || [iap.purchaseDate compare:lastTransaction.purchaseDate] == NSOrderedDescending)
+            {
+                lastTransaction = iap;
+            }
+        }
+        else
+        {
+            return iap;
+        }
+    }
+    
+    return lastTransaction;
+}
+//dlawton-end
+
 -(BOOL)containsActiveAutoRenewableSubscriptionOfProductIdentifier:(NSString *)productIdentifier forDate:(NSDate *)date
 {
     RMAppReceiptIAP *lastTransaction = nil;
