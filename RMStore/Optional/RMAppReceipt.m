@@ -19,11 +19,15 @@
 //
 
 #import "RMAppReceipt.h"
-#import <UIKit/UIKit.h>
 #import <openssl/pkcs7.h>
 #import <openssl/objects.h>
 #import <openssl/sha.h>
 #import <openssl/x509.h>
+
+//dlawton-begin
+#import <IOKit/IOKitLib.h>
+#import <Foundation/Foundation.h>
+//dlawton-end
 
 // From https://developer.apple.com/library/ios/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html#//apple_ref/doc/uid/TP40010573-CH106-SW1
 NSInteger const RMAppReceiptASN1TypeBundleIdentifier = 2;
@@ -43,6 +47,60 @@ NSInteger const RMAppReceiptASN1TypeOriginalPurchaseDate = 1706;
 NSInteger const RMAppReceiptASN1TypeSubscriptionExpirationDate = 1708;
 NSInteger const RMAppReceiptASN1TypeWebOrderLineItemID = 1711;
 NSInteger const RMAppReceiptASN1TypeCancellationDate = 1712;
+
+//dlawton-begin
+
+// Returns a CFData object, containing the computer's GUID.
+CFDataRef copy_mac_address(void)
+{
+    kern_return_t             kernResult;
+    mach_port_t               master_port;
+    CFMutableDictionaryRef    matchingDict;
+    io_iterator_t             iterator;
+    io_object_t               service;
+    CFDataRef                 macAddress = nil;
+    
+    kernResult = IOMasterPort(MACH_PORT_NULL, &master_port);
+    if (kernResult != KERN_SUCCESS) {
+        printf("IOMasterPort returned %d\n", kernResult);
+        return nil;
+    }
+    
+    matchingDict = IOBSDNameMatching(master_port, 0, "en0");
+    if (!matchingDict) {
+        printf("IOBSDNameMatching returned empty dictionary\n");
+        return nil;
+    }
+    
+    kernResult = IOServiceGetMatchingServices(master_port, matchingDict, &iterator);
+    if (kernResult != KERN_SUCCESS) {
+        printf("IOServiceGetMatchingServices returned %d\n", kernResult);
+        return nil;
+    }
+    
+    while((service = IOIteratorNext(iterator)) != 0) {
+        io_object_t parentService;
+        
+        kernResult = IORegistryEntryGetParentEntry(service, kIOServicePlane,
+                                                   &parentService);
+        if (kernResult == KERN_SUCCESS) {
+            if (macAddress) CFRelease(macAddress);
+            
+            macAddress = (CFDataRef) IORegistryEntryCreateCFProperty(parentService,
+                                                                     CFSTR("IOMACAddress"), kCFAllocatorDefault, 0);
+            IOObjectRelease(parentService);
+        } else {
+            printf("IORegistryEntryGetParentEntry returned %d\n", kernResult);
+        }
+        
+        IOObjectRelease(service);
+    }
+    IOObjectRelease(iterator);
+    
+    return macAddress;
+}
+
+//dlawton-end
 
 #pragma mark - ANS1
 
@@ -215,19 +273,22 @@ static NSURL *_appleRootCertificateURL = nil;
 
 - (BOOL)verifyReceiptHash
 {
-    // TODO: Getting the uuid in Mac is different. See: https://developer.apple.com/library/ios/releasenotes/General/ValidateAppStoreReceipt/Chapters/ValidateLocally.html#//apple_ref/doc/uid/TP40010573-CH1-SW5
-    NSUUID *uuid = [UIDevice currentDevice].identifierForVendor;
-    unsigned char uuidBytes[16];
-    [uuid getUUIDBytes:uuidBytes];
-    
+//dlawton-begin
+    CFDataRef cfMacAddress = copy_mac_address();
     // Order taken from: https://developer.apple.com/library/ios/releasenotes/General/ValidateAppStoreReceipt/Chapters/ValidateLocally.html#//apple_ref/doc/uid/TP40010573-CH1-SW5
     NSMutableData *data = [NSMutableData data];
-    [data appendBytes:uuidBytes length:sizeof(uuidBytes)];
+    [data appendBytes:CFDataGetBytePtr(cfMacAddress) length:CFDataGetLength(cfMacAddress)];
+//dlawton-end
+    
     [data appendData:self.opaqueValue];
     [data appendData:self.bundleIdentifierData];
     
     NSMutableData *expectedHash = [NSMutableData dataWithLength:SHA_DIGEST_LENGTH];
     SHA1((const uint8_t*)data.bytes, data.length, (uint8_t*)expectedHash.mutableBytes); // Explicit casting to avoid errors when compiling as Objective-C++
+    
+//dlawton-begin
+        if (cfMacAddress) CFRelease(cfMacAddress);
+//dlawton-end
     
     return [expectedHash isEqualToData:self.receiptHash];
 }
